@@ -41,6 +41,8 @@ class TranslatorAgent(ToolCallAgent):
         )
     )
     #tool_choices: TOOL_CHOICE_TYPE = ToolChoice.REQUIRED  # Force tool usage
+    tool_choices: TOOL_CHOICE_TYPE = ToolChoice.AUTO
+    
     special_tool_names: List[str] = Field(default_factory=lambda: ["terminate_and_output_caption"])
     max_steps: int = 3
     max_observe: int = 10000  # Sufficient for detailed smart_grid_caption analysis
@@ -114,3 +116,44 @@ class TranslatorAgent(ToolCallAgent):
         return '\n'.join(sir_content) if sir_content else ""
 
     # force_termination implementation inherited from BaseAgent
+    
+    # translator.py 里动态设置
+    def _build_refinement_first_step_prompt(self, still_need: str, suggested_tool: str) -> str:
+        return f"""This is a refinement iteration. The reasoning agent needs:
+
+    "{still_need}"
+
+    Your ONLY task in this step:
+    1. Call `{suggested_tool}` immediately to get the requested information
+    2. Do NOT call any other tool first
+    3. After the tool result, update your SIR and call `terminate_and_output_caption`
+
+    Do not overthink — execute `{suggested_tool}` now.
+    """
+
+    # async def execute_tool(self, command) -> str:
+    #     """Override to hook tool results for SIR tracking"""
+    #     import re, json
+        
+    #     result = await super().execute_tool(command)
+    #     tool_name = command.function.name
+
+    #     if tool_name in ['ocr', 'smart_grid_caption', 'read_table']:
+    #         # 剥离 "Observed output of cmd..." 包装层，提取纯工具输出
+    #         tool_output_match = re.search(
+    #             r'Observed output of cmd `\w+` executed:\s*(.+)',
+    #             result,
+    #             re.DOTALL
+    #         )
+    #         raw_output = tool_output_match.group(1).strip() if tool_output_match else result
+    #         self.update_sir(f"[{tool_name}]:\n{raw_output}")
+    #         logger.info(f"📝 SIR updated from {tool_name} ({len(raw_output)} chars)")
+
+    #     elif tool_name == 'terminate_and_output_caption':
+    #         # 提取 JSON 存入 final_caption_json 供 flow 层使用
+    #         json_match = re.search(r'\{.*\}', result, re.DOTALL)
+    #         if json_match:
+    #             self.final_caption_json = json_match.group(0)
+    #             logger.info(f"📝 final_caption_json stored ({len(self.final_caption_json)} chars)")
+
+    #     return result

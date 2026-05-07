@@ -1,17 +1,12 @@
 from app.tool.base import BaseTool
 
+_TERMINATE_AND_ANSWER_DESCRIPTION = """Terminate the reasoning process and provide a final answer.
 
-_TERMINATE_AND_ANSWER_DESCRIPTION = """Terminate the reasoning process and provide a final answer when you have sufficient information from the SIR to confidently answer the question.
+Use this tool when you have sufficient information to confidently answer the question.
 
-Use this tool when:
-- The SIR contains all necessary visual details to answer the question
-- You can identify the correct answer from the available options
-- No additional information or refinement is needed from the translator agent
-- Your answer matches one of the multiple choice options (if applicable)
-
-IMPORTANT: For multiple choice questions, ensure your answer corresponds to one of the given options (A, B, C, D).
-
-This signals that the iterative feedback loop should end with your final answer."""
+IMPORTANT: All your detailed thinking and derivation should be done BEFORE calling this tool 
+(e.g., via python_execute or prior reasoning steps). 
+The `reasoning` field here is only a brief summary — do NOT re-derive or repeat your full analysis."""
 
 
 class TerminateAndAnswer(BaseTool):
@@ -22,7 +17,7 @@ class TerminateAndAnswer(BaseTool):
         "properties": {
             "answer": {
                 "type": "string",
-                "description": "Your final answer to the question. Please include short answer only. For multiple choice, only include option",
+                "description": "Your final answer. For multiple choice, include only the option letter. For open-ended, a concise but complete response.",
             },
             "confidence": {
                 "type": "string",
@@ -30,13 +25,19 @@ class TerminateAndAnswer(BaseTool):
                 "enum": ["high", "medium", "low"],
             },
             "reasoning": {
-                "type": "string", 
-                "description": "Brief explanation of how the SIR information led to this answer.",
-            }
+                "type": "string",
+                "description": "One or two sentences summarizing the key evidence from the SIR that led to this answer. Do NOT repeat your full derivation or re-analyze — that should happen before calling this tool.",
+                "maxLength": 300,
+            },
         },
         "required": ["answer", "confidence", "reasoning"],
     }
 
     async def execute(self, answer: str, confidence: str, reasoning: str) -> str:
-        """Provide final answer and terminate the reasoning process"""
-        return f"FINAL ANSWER: {answer}\n\nConfidence: {confidence}\n\nReasoning: {reasoning}\n\nThe reasoning process has been completed successfully."
+        reasoning = (reasoning or "").strip()[:300]  # 兜底
+        return (
+            f"FINAL ANSWER: {answer}\n\n"
+            f"Confidence: {confidence}\n\n"
+            f"Reasoning: {reasoning}\n\n"
+            f"The reasoning process has been completed successfully."
+        )

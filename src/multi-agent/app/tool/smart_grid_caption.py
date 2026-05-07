@@ -273,7 +273,8 @@ class SmartGridCaption(BaseTool):
             selection_prompt = self._create_selection_prompt(question, options, context)
             
             # Prepare LLM request with vision-capable model
-            llm = LLM()  # Use default OpenAI config (gpt-4o-mini) which supports vision
+            # llm = LLM()  # Use default OpenAI config (gpt-4o-mini) which supports vision
+            llm = LLM(config_name="translator_api")
             
             # Call LLM to select patches
             response = await llm.ask_with_images(
@@ -560,7 +561,8 @@ Your selection:"""
             )
             
             # Prepare LLM request with vision-capable model
-            llm = LLM()  # Use default OpenAI config (gpt-4o-mini) which supports vision
+            # llm = LLM()  # Use default OpenAI config (gpt-4o-mini) which supports vision
+            llm = LLM(config_name="translator_api")
             
             # Generate caption
             caption = await llm.ask_with_images(

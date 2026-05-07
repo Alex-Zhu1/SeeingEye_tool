@@ -1,7 +1,7 @@
 import base64
 import asyncio
 from typing import Dict, List, Optional, Union, Tuple, Any
-import json
+
 from pydantic import Field
 
 from app.agent.base import BaseAgent
@@ -64,29 +64,8 @@ class IterativeRefinementFlow(BaseFlow):
         if iteration > 1 and self.previous_sir:
             if agent == self.translator_agent:
                 context_msg = f"Your previous visual description (iteration {iteration-1}): {self.previous_sir}\n\nUse this as reference to improve your current description."
-
-                # 测试feedback
-                feedback = ""
-                if "--- REASONING FEEDBACK ---" in self.previous_sir:
-                    feedback = self.previous_sir.split("--- REASONING FEEDBACK ---")[-1].strip()
-                    logger.info(f"✅ Feedback extracted ({len(feedback)} chars):\n{feedback}")
-                else:
-                    logger.warning(f"⚠️ No '--- REASONING FEEDBACK ---' marker found in previous_sir")
-                    logger.info(f"🔍 previous_sir markers present: {[line for line in self.previous_sir.split(chr(10)) if line.startswith('---')]}")
-
-                # if feedback:
-                #     context_msg = (
-                #         f"Your current visual description:\n{self.previous_sir}"
-                #     )
-                #     from app.schema import Message
-                #     agent.memory.add_message(Message.system_message(context_msg))
-                #     logger.info(f"💉 Injected system context to translator")
-                # else:
-                #     logger.warning(f"⚠️ feedback is empty — system context NOT injected")
-
             else:  # reasoning agent
-                    # context_msg = f"Previous visual description (iteration {iteration-1}): {self.previous_sir}\n\nThis shows the previous attempt at visual analysis. You can reference this for continuity."
-                    context_msg = f"As a reasoning agent, focus on the current SIR for your answer."
+                context_msg = f"Previous visual description (iteration {iteration-1}): {self.previous_sir}\n\nThis shows the previous attempt at visual analysis. You can reference this for continuity."
 
             # Add system message directly to avoid base64_image parameter issue
             from app.schema import Message
@@ -148,21 +127,12 @@ class IterativeRefinementFlow(BaseFlow):
             if clean_feedback.startswith("FEEDBACK from reasoning agent:"):
                 clean_feedback = clean_feedback.replace("FEEDBACK from reasoning agent:", "").strip()
 
-        # 清理旧 REASONING FEEDBACK 段
+        # 清理旧的 REASONING FEEDBACK 段，每轮只保留最新一条
         if "--- REASONING FEEDBACK ---" in self.current_sir:
             self.current_sir = self.current_sir.split("--- REASONING FEEDBACK ---")[0].rstrip()
-
-        # 如果是 JSON 格式，提取 global_caption 作为 SIR 基础
-        try:
-            sir_json = json.loads(self.current_sir)
-            if "global_caption" in sir_json:
-                self.current_sir = sir_json["global_caption"]
-                logger.info("✂️ Extracted global_caption from JSON before appending feedback")
-        except (json.JSONDecodeError, TypeError):
-            pass
+            logger.info("✂️ Removed previous REASONING FEEDBACK from SIR")
 
         self.current_sir = f"{self.current_sir}\n\n--- REASONING FEEDBACK ---\n{clean_feedback}"
-        
         logger.info(f"💬 Appended feedback to SIR (new length: {len(self.current_sir)} characters)")
 
     def _encode_image_to_base64(self, image_path: str) -> str:
@@ -347,7 +317,7 @@ class IterativeRefinementFlow(BaseFlow):
 
                     # Reset memory for new iteration but preserve previous SIR context
                     self._reset_agent_memory_for_iteration(self.translator_agent, iteration)
-                    # self._reset_agent_memory_for_iteration(self.reasoning_agent, iteration) #取消 reasoning agent 的 sys context 注入，reason应该依赖的current sir
+                    self._reset_agent_memory_for_iteration(self.reasoning_agent, iteration)
 
                     # Set flow context and iteration info for agents
                     self.translator_agent.set_flow_iteration_context(f"{iteration}/{self.max_iterations}")
@@ -374,7 +344,6 @@ class IterativeRefinementFlow(BaseFlow):
 
                     # Handle reasoning decision
                     if decision == "FINAL_ANSWER":
-                        self._append_feedback_to_sir(reasoning_result)
                         logger.info(f"Final answer obtained in {iteration} iteration(s)")
                         return self._finalize_with_success(session_id, reasoning_result)
                     elif decision == "CONTINUE_WITH_FEEDBACK" and iteration < self.max_iterations:
@@ -382,9 +351,7 @@ class IterativeRefinementFlow(BaseFlow):
                         self._append_feedback_to_sir(reasoning_result)
 
                         # Update SIR history before setting new current
-                        # iter{iteration} 结束: 将 SIR+feedback 存入 previous_sir，供下一轮 system context 使用
-                        self.previous_sir = self.previous_sir = f"iteration: {iteration}\n\n{self.current_sir}"
-                        logger.info(f"📦 Saved iter{iteration} SIR+feedback to previous_sir ({len(self.current_sir)} chars)")
+                        self.previous_sir = self.current_sir   # ← 只做这一步
                         self._validate_sir(self.previous_sir, iteration)
 
                         logger.info(f"💬 Feedback received and appended to SIR, proceeding to iteration {iteration + 1}")
@@ -781,6 +748,7 @@ class IterativeRefinementFlow(BaseFlow):
             options_text = f"\n\nOptions: {', '.join(options)}" if options else ""
 
             if iteration == 1:
+                # iteration 1 不走这里，由 _run_translator_direct_vision 处理
                 translator_input = (
                     f"You are a visual captioner. Describe what you see visually.\n"
                     f"Question: {question}{options_text}\n\nImage file: {self.image_path}"
@@ -788,13 +756,15 @@ class IterativeRefinementFlow(BaseFlow):
                 agent.update_memory("user", translator_input, base64_image=self.base64_image)
                 logger.info("Added initial request to translator memory")
                 return translator_input
+
             else:
+                # 改为只打log确认一下：
                 if hasattr(agent, 'current_sir') and agent.current_sir:
                     logger.info(f"✅ translator.current_sir retained from previous iteration ({len(agent.current_sir)} chars)")
 
-                # 解析 Still need 和建议工具
+                # 解析 Still need 和建议工具，动态设置 first_step_prompt
                 still_need = ""
-                suggested_tool = "smart_grid_caption"
+                suggested_tool = "smart_grid_caption"  # 默认工具
 
                 need_match = re.search(
                     r'Still need:\s*(.+?)(?:\n|$)',
@@ -803,6 +773,7 @@ class IterativeRefinementFlow(BaseFlow):
                 )
                 if need_match:
                     still_need = need_match.group(1).strip()
+                    # 只取第一个工具名，防止模型列了多个
                     still_need_first = still_need.split(',')[0].split(' and ')[0].strip()
                     still_need_lower = still_need_first.lower()
                     if "ocr" in still_need_lower:
@@ -814,7 +785,7 @@ class IterativeRefinementFlow(BaseFlow):
 
                 logger.info(f"🎯 Refinement target: still_need='{still_need}', suggested_tool='{suggested_tool}'")
 
-                # 动态覆盖 first_step_prompt
+                # 动态覆盖 first_step_prompt，强制 step1 直接调指定工具
                 agent.first_step_prompt = (
                     f"This is refinement iteration {iteration}. The reasoning agent needs:\n\n"
                     f'"{still_need}"\n\n'
@@ -825,21 +796,22 @@ class IterativeRefinementFlow(BaseFlow):
                     f"Execute `{suggested_tool}` immediately."
                 )
 
-                # ← SIR 已在 system context 中，user message 只传任务指令
                 merged_translator_input = (
+                    f"You are refining your visual description based on reasoning feedback.\n"
                     f"Question: {question}{options_text}\n"
                     f"Image file: {self.image_path}\n\n"
-                    f"The reasoning agent needs:\n{still_need}\n\n"
+                    f"Current SIR with reasoning feedback (iteration {iteration - 1}):\n"
+                    f"{self.current_sir}\n\n"
                     f"IMPROVEMENT TASK:\n"
-                    f"1. Refer to your system context for the current SIR and reasoning feedback\n"
+                    f"1. Read the 'REASONING FEEDBACK' section — focus on 'Still need'\n"
                     f"2. Use `{suggested_tool}` to get the specific information requested\n"
                     f"3. Append the new detail to the existing SIR — do NOT rewrite from scratch\n"
                     f"4. Call `terminate_and_output_caption` with the updated SIR"
                 )
                 agent.update_memory("user", merged_translator_input, base64_image=self.base64_image)
                 logger.info(
-                    f"Added refinement task to translator memory "
-                    f"(iteration {iteration}, tool={suggested_tool}, still_need='{still_need}')"
+                    f"Added SIR improvement task to translator memory "
+                    f"(iteration {iteration}, tool={suggested_tool}, SIR: {len(self.current_sir)} chars)"
                 )
                 return merged_translator_input
 
@@ -854,58 +826,15 @@ class IterativeRefinementFlow(BaseFlow):
                 logger.warning(f"No SIR available for reasoning agent in iteration {iteration}")
                 return context_input
 
-            # 只取 global_caption，剥离 translator 内部元数据
+            # 只取 global_caption，剥离 translator 内部元数据 # 避免无关字段干扰 reasoning，同时节省 token
             sir_text = self.current_sir
-            # try:
-            #     sir_json = json.loads(self.current_sir)
-            #     if "global_caption" in sir_json:
-            #         sir_text = sir_json["global_caption"]
-            #         logger.info("✂️ Extracted global_caption from SIR JSON for reasoning")
-            # except (json.JSONDecodeError, TypeError):
-            #     pass
             try:
                 sir_json = json.loads(self.current_sir)
-                caption = sir_json.get("global_caption", "")
-                summary = sir_json.get("summary_of_this_turn", "")
-
-                # 从 summary 里只提取 Tool Usage 和 Feedback Integration
-                tool_usage = ""
-                feedback_integration = ""
-                
-                if summary:
-                    tool_match = re.search(
-                        r'\*?\*?Tool Usage\*?\*?:\s*(.+?)(?=\n\d+\.|$)',
-                        summary,
-                        re.DOTALL | re.IGNORECASE
-                    )
-                    feedback_match = re.search(
-                        r'\*?\*?Feedback Integration\*?\*?:\s*(.+?)(?=\n\d+\.|$)',
-                        summary,
-                        re.DOTALL | re.IGNORECASE
-                    )
-                    if tool_match:
-                        tool_usage = tool_match.group(1).strip()
-                    if feedback_match:
-                        feedback_integration = feedback_match.group(1).strip()
-
-                # 组装给 reasoning 的 sir_text
-                parts = []
-                if caption:
-                    parts.append(f"Visual description:\n{caption}")
-                if tool_usage:
-                    parts.append(f"Tools used:\n{tool_usage}")
-                if feedback_integration:
-                    parts.append(f"Feedback integration:\n{feedback_integration}")
-                
-                if parts:
-                    sir_text = "\n\n".join(parts)
-                    logger.info(
-                        f"✂️ Extracted for reasoning: caption={bool(caption)}, "
-                        f"tool_usage={bool(tool_usage)}, feedback_integration={bool(feedback_integration)}"
-                    )
-
+                if "global_caption" in sir_json:
+                    sir_text = sir_json["global_caption"]
+                    logger.info("✂️ Extracted global_caption from SIR JSON for reasoning")
             except (json.JSONDecodeError, TypeError):
-                # 非 JSON 格式直接用原文
+                # 非 JSON 格式（如含 REASONING FEEDBACK 的纯文本），直接用原文
                 pass
 
             merged_reasoning_input = (
@@ -913,18 +842,14 @@ class IterativeRefinementFlow(BaseFlow):
                 f"Visual analysis from translator (iteration {iteration}):\n"
                 f"{sir_text}\n\n"
                 f"REASONING TASK:\n"
-                f"Step 1: Analyze the visual description above\n"
-                f"Step 2 (optional): If calculation is needed, call python_execute ONCE\n"
-                f"Step 3: You MUST call exactly ONE of these two tools to finish:\n"
-                f"  - terminate_and_answer: if you can answer confidently\n"
-                f"  - terminate_and_ask_translator: if you need ONE specific visual detail\n\n"
-                f"STRICT RULES:\n"
-                f"- Do NOT call python_execute more than once\n"
-                f"- Do NOT call both terminate_and_answer and terminate_and_ask_translator\n"
-                f"- You MUST terminate in this turn — no open-ended analysis\n"
-                f"- For terminate_and_ask_translator, specify ONE tool only: OCR/smart_grid_caption/read_table"
+                f"1. Analyze the visual description above\n"
+                f"2. Use python_execute for any calculations needed\n"
+                f"3. If confident, call terminate_and_answer with your final answer\n"
+                f"4. If you need more visual details, call terminate_and_ask_translator with:\n"
+                f"   - Preliminary answer: your current best answer\n"
+                f"   - Confidence: high/medium/low\n"
+                f"   - Still need: ONE tool only (OCR/smart_grid_caption/read_table): ONE specific task"
             )
-
             agent.update_memory("user", merged_reasoning_input)
             logger.info(
                 f"Added reasoning task to agent memory "

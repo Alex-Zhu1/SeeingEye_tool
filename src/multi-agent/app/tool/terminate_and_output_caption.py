@@ -43,7 +43,7 @@ class TerminateAndOutputCaption(BaseTool):
         "required": ["global_caption", "confidence", "summary_of_this_turn"],
     }
 
-    async def execute(self, global_caption: str, confidence: str, summary_of_this_turn: str) -> str:
+    async def execute(self, global_caption: str, confidence: str, summary_of_this_turn: str, **kwargs) -> str:
         """Terminate visual analysis and output enhanced JSON caption"""
         caption_data = {
             "global_caption": global_caption,

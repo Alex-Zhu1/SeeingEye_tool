@@ -297,7 +297,7 @@ class OpenAIProvider(BaseModelProvider, ModelProvider):
             "gpt-3.5-turbo": "gpt-3.5-turbo",
         }
 
-        logger.info(f"Initialized OpenAI provider with model: {model}")
+        # logger.info(f"Initialized OpenAI provider with model: {model}")
 
     # BaseModelProvider interface (sync, uses Conversation)
     def chat_completion(self, conversation: Conversation, **kwargs) -> str:

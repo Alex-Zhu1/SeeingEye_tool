@@ -400,6 +400,42 @@ class LogSave:
         with question_file.open('r', encoding='utf-8') as f:
             return json.load(f)
 
+    def _log_failed_tool_execution(self, tool_name: str, arguments: str, error_msg: str, error_type: str) -> None:
+        if hasattr(self, '_flow_context') and hasattr(self._flow_context, 'log_save'):
+            log_save = self._flow_context.log_save
+            iteration = getattr(self, '_flow_iteration_context', 1)
+            if isinstance(iteration, str):
+                iteration = int(iteration.split('/')[0]) if '/' in iteration else 1
+
+            if hasattr(log_save, 'add_individual_question_message') and log_save.current_question:
+                log_save.add_individual_question_message(
+                    role=f"tool_{self.name}",
+                    content=f"Tool '{tool_name}' failed: {error_msg}",
+                    metadata={
+                        "step_number": self.current_step,
+                        "iteration": iteration,
+                        "tool_name": tool_name,
+                        "error_type": error_type,
+                        "error_message": error_msg
+                    }
+                )
+            elif hasattr(log_save, 'add_question_message') and log_save.current_question:
+                log_save.add_question_message(
+                    role=f"tool_{self.name}",
+                    content=f"Tool '{tool_name}' failed: {error_msg}",
+                    metadata={
+                        "step_number": self.current_step,
+                        "iteration": iteration,
+                        "tool_name": tool_name,
+                        "error_type": error_type,
+                    }
+                )
+            else:
+                # 不再调用 log_custom_step，改为直接 logger 输出
+                logger.warning(
+                    f"Tool execution failed (not logged to LogSave): "
+                    f"tool={tool_name}, error={error_msg}"
+                )
 
 def reset_flow_token_counters(flow_executor) -> None:
     """

@@ -110,7 +110,7 @@ class FlowExecutor:
         Returns:
             Dict containing response, execution_time, and metadata
         """
-        self._ensure_flow_initialized()
+        self._ensure_flow_initialized()    #TODO: 初始化multi-agent，在这里貌似不好
 
         start_time = datetime.now()
 

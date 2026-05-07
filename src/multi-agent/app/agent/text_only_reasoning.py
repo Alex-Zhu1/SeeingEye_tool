@@ -3,10 +3,11 @@ from pydantic import Field, model_validator
 
 from app.agent.toolcall import ToolCallAgent
 from app.llm import LLM
-from app.prompt.text_only_reasoning import SYSTEM_PROMPT, NEXT_STEP_PROMPT, FINAL_STEP_PROMPT, FINAL_ITERATION_PROMPT
+from app.prompt.text_only_reasoning import SYSTEM_PROMPT, NEXT_STEP_PROMPT, FINAL_STEP_PROMPT, FINAL_ITERATION_PROMPT, FIRST_STEP_PROMPT
 from app.utils.agent_utils import create_llm_setup_validator
-from app.tool import TerminateAndAnswer, ToolCollection
+from app.tool import ToolCollection
 from app.tool.python_execute import PythonExecute
+from app.tool.terminate_and_answer import TerminateAndAnswer
 from app.tool.terminate_and_ask_translator import TerminateAndAskTranslator
 from app.tool.think import Think
 from app.logger import logger
@@ -28,6 +29,7 @@ class TextOnlyReasoningAgent(ToolCallAgent):
     _skip_default_llm_init: bool = True
     
     system_prompt: str = SYSTEM_PROMPT
+    first_step_prompt: str = FIRST_STEP_PROMPT
     next_step_prompt: str = NEXT_STEP_PROMPT
     final_step_prompt: str = FINAL_STEP_PROMPT
     final_iteration_prompt: str = FINAL_ITERATION_PROMPT
@@ -40,7 +42,8 @@ class TextOnlyReasoningAgent(ToolCallAgent):
             TerminateAndAskTranslator()
         )
     )
-    #tool_choices: TOOL_CHOICE_TYPE = ToolChoice.REQUIRED  # Force tool usage
+    tool_choices: TOOL_CHOICE_TYPE = ToolChoice.REQUIRED  # Force tool usage
+    # tool_choices: TOOL_CHOICE_TYPE = ToolChoice.AUTO
     special_tool_names: List[str] = Field(default_factory=lambda: ["terminate_and_answer", "terminate_and_ask_translator"])
     max_steps: int = 3
     max_observe: int = 2000  # Sufficient for text-based reasoning

@@ -133,6 +133,12 @@ MULTIMODAL_MODELS = [
     "claude-3-haiku-20240307",
     "Qwen/Qwen2.5-VL-3B-Instruct",
     "Qwen/Qwen2.5-VL-7B-Instruct",
+    "qwen2.5-vl-3b-instruct",   # ← 加这一行，匹配 DashScope 的小写名
+    "qwen2.5-vl-7b-instruct",   # ← 加这一行，匹配 DashScope 的小写名
+    "qwen2.5-vl-32b-instruct",
+    "qwen3-vl-32b-instruct",   # ← 顺手加这个
+    "qwen3-vl-8b-instruct",   # ← 顺手加这个
+
 ]
 
 
@@ -422,6 +428,10 @@ class LLM:
             # if standard_params or vllm_params:
             #     logger.info(f"🎯 Standard OpenAI parameters: {standard_params}")
             #     logger.info(f"🎯 vLLM-specific parameters: {vllm_params}")
+            
+        # ← 这里在 if 块外面，对所有 api_type 生效  # TODO: 可能需要更细粒度控制哪些参数传给哪个模型，或者在 config 中直接区分 vLLM 参数和标准参数
+        if "qwen3" in self.model.lower():
+            standard_params['extra_body'] = {"enable_thinking": False}
 
         return standard_params, vllm_params
 

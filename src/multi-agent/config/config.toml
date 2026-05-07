@@ -33,7 +33,7 @@ max_model_len = 8192
 
 # Qwen2.5-VL-3B-Instruct - DashScope API Version
 [llm.translator]
-model = "qwen2.5-vl-3b-instruct"                     # DashScope model name
+model = "qwen3-next-80b-a3b-instruct" # "qwen2.5-vl-3b-instruct"                     # DashScope model name
 api_type = "dashscope"                     # Use DashScope API
 max_tokens = 4096
 temperature = 0.01                         # Official MMMU setting
@@ -196,22 +196,43 @@ max_tokens = 4096
 temperature = 0.0                           # Deterministic for evaluation
 top_p = 1.0
 
+
+###############
 # DashScope API 支持的 3B 和 7B 模型 (如果你想用API而不是本地vLLM)
-[llm.mia_qwen2_5_vl_3b_dashscope]
-model = "qwen2.5-vl-3b-instruct"           # 3B model via DashScope API
-api_type = "dashscope"
-api_key = ""                               # Set DASHSCOPE_API_KEY environment variable
+[llm.translator_api]
+model = "qwen3-vl-32b-instruct" # "qwen3-vl-32b-instruct" #"qwen2.5-vl-3b-instruct"           # 3B model via DashScope API
+api_type = "openai"
+api_key = "sk-4381e45ba46441b98e0c958fa66e32b7"     # Set DASHSCOPE_API_KEY environment variable
 max_tokens = 4096
 temperature = 0.0                           # Deterministic for evaluation
 top_p = 0.001
 top_k = 1
-base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 timeout = 120
 retry = 3
 wait = 5
 use_custom_prompt = true
 min_pixels = 1003520
 max_pixels = 4014080
+
+
+[llm.reasoning_api]
+model = "qwen3-8b"           # 3B model via DashScope API
+api_type = "openai"
+api_key = "sk-4381e45ba46441b98e0c958fa66e32b7"                          # Set DASHSCOPE_API_KEY environment variable
+max_tokens = 4096
+temperature = 0.0                           # Deterministic for evaluation
+top_p = 0.001
+top_k = 1
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+timeout = 120
+retry = 3
+wait = 5
+use_custom_prompt = true
+min_pixels = 1003520
+max_pixels = 4014080
+###############
+
 
 [llm.mia_qwen2_5_vl_7b_dashscope]
 model = "qwen2.5-vl-7b-instruct"           # 7B model via DashScope API
@@ -230,7 +251,7 @@ max_pixels = 4014080
 
 # ===== LOCAL API CONFIGURATIONS (vLLM Served Models) =====
 # Qwen2.5-VL-3B via Local vLLM API Server
-[llm.translator_api]
+[llm.stranslator_api]
 model = "Qwen/Qwen2.5-VL-3B-Instruct"     # Model name for API
 api_type = "openai"                        # Use OpenAI-compatible API
 base_url = "http://localhost:8000/v1"      # Local vLLM server endpoint
@@ -240,8 +261,9 @@ temperature = 0.01                         # Official MMMU setting
 top_p = 0.001                              # Official MMMU setting
 top_k = 1                                  # Official MMMU setting
 repetition_penalty = 1.1                   # Repetition penalty to reduce repetitive text
+
 # Qwen3-8B via Local vLLM API Server
-[llm.reasoning_api]
+[llm.sreasoning_api]
 model = "Qwen/Qwen3-8B"                    # Model name for API
 api_type = "openai"                        # Use OpenAI-compatible API
 base_url = "http://localhost:8001/v1"      # Local vLLM server endpoint

@@ -1,124 +1,137 @@
-"""OCR tool for extracting text from images using Azure Computer Vision API."""
+"""OCR tool for extracting text from images using Qwen-VL-OCR (DashScope)."""
 
 import os
-import requests
+import base64
+import mimetypes
 from pathlib import Path
 from typing import Optional
+
+from openai import AsyncOpenAI
 
 from app.tool.base import BaseTool, ToolResult
 
 
 class OCR(BaseTool):
-    """OCR tool for extracting text from images using Azure Computer Vision API"""
-    
+    """OCR tool using Qwen-VL-OCR via DashScope's OpenAI-compatible endpoint."""
+
     name: str = "ocr"
-    description: str = "Extract text content from image files, supports text recognition in multiple languages"
-    
-    # Define tool parameters (JSON Schema format)
+    description: str = (
+        "Extract text content from image files using Qwen-VL-OCR. "
+        "Supports multilingual text recognition. An optional `prompt` "
+        "can be provided to guide what to extract (e.g. only the table, "
+        "only the title, return as JSON, etc.)."
+    )
+
+    # Tool parameter schema (visible to the LLM agent)
     parameters: dict = {
         "type": "object",
         "properties": {
             "image_path": {
                 "type": "string",
-                "description": "Path to the image file (supports relative and absolute paths)"
+                "description": "Path to the image file (supports relative and absolute paths)",
             },
-            "language": {
+            "prompt": {
                 "type": "string",
-                "description": "Language code for recognition, e.g., 'zh-Hans' (Simplified Chinese), 'en' (English), 'unk' (auto-detect)",
-                "default": "unk"
+                "description": (
+                    "Optional custom instruction for OCR extraction, e.g. "
+                    "'extract only the table content as markdown' or "
+                    "'return key fields as JSON'. If omitted, all visible "
+                    "text in the image is extracted as plain text."
+                ),
             },
-            "detect_orientation": {
-                "type": "boolean",
-                "description": "Whether to detect image orientation",
-                "default": True
-            }
         },
-        "required": ["image_path"]
+        "required": ["image_path"],
     }
-    
-    # Azure Computer Vision API configuration
-    subscription_key: str = ""
-    endpoint: str = ""
-    ocr_url: str = endpoint + "vision/v2.1/ocr"
-    headers: dict = {
-            "Ocp-Apim-Subscription-Key": subscription_key,
-            "Content-Type": "application/octet-stream"
-        }
-    
 
-    
-    async def execute(self, image_path: str, language: str = "unk", detect_orientation: bool = True) -> ToolResult:
-        """Execute OCR recognition"""
+    # ---- Qwen-VL-OCR configuration ----
+    model: str = "qwen-vl-ocr-latest"
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # Default prompt used by qwen-vl-ocr when no custom prompt is provided.
+    default_prompt: str = (
+        "Please output only the text content from the image "
+        "without any additional descriptions or formatting."
+    )
+    # Pixel thresholds recommended in the Qwen-VL-OCR docs.
+    min_pixels: int = 32 * 32 * 3
+    max_pixels: int = 32 * 32 * 8192
+    # Network timeout (seconds)
+    request_timeout: float = 60.0
+
+    async def execute(
+        self,
+        image_path: str,
+        prompt: Optional[str] = None,
+    ) -> ToolResult:
+        """Run Qwen-VL-OCR on a local image file."""
         try:
-            # Check if image file exists
+            # 1. Validate file
             image_file = Path(image_path)
             if not image_file.exists():
                 return ToolResult(error=f"Image file does not exist: {image_path}")
-            
-            # Check if file is in supported image format
-            allowed_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff'}
-            if image_file.suffix.lower() not in allowed_extensions:
-                return ToolResult(error=f"Unsupported image format: {image_file.suffix}. Supported formats: {', '.join(allowed_extensions)}")
-            
-            # Set request parameters
-            params = {
-                "language": language,
-                "detectOrientation": str(detect_orientation).lower()
-            }
-            
-            # Read image file (binary mode)
-            with open(image_file, "rb") as f:
-                image_data = f.read()
-            
-            # Call Azure OCR API
-            response = requests.post(
-                self.ocr_url, 
-                headers=self.headers, 
-                params=params, 
-                data=image_data,
-                timeout=30
-            )
-            
-            # Check response status
-            if response.status_code != 200:
-                return ToolResult(error=f"OCR API call failed: {response.status_code} - {response.text}")
-            
-            result = response.json()
-            
-            # Extract text content
-            extracted_text = self._extract_text_from_result(result)
-            
-            # Format output as string for better compatibility
-            language_detected = result.get("language", "unknown")
-            text_angle = result.get("textAngle", 0)
-            orientation = result.get("orientation", "NotDetected")
-            regions_count = len(result.get("regions", []))
-            
-            output_text = f"""OCR Results:
-Extracted Text:
-{extracted_text}
 
-"""
-            
+            allowed_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
+            if image_file.suffix.lower() not in allowed_extensions:
+                return ToolResult(
+                    error=(
+                        f"Unsupported image format: {image_file.suffix}. "
+                        f"Supported formats: {', '.join(sorted(allowed_extensions))}"
+                    )
+                )
+
+            # 2. Validate API key
+            # api_key = os.getenv("DASHSCOPE_API_KEY")
+            api_key = "sk-4381e45ba46441b98e0c958fa66e32b7"
+            if not api_key:
+                return ToolResult(
+                    error="DASHSCOPE_API_KEY environment variable is not set."
+                )
+
+            # 3. Encode image as base64 data URL
+            mime_type, _ = mimetypes.guess_type(str(image_file))
+            if mime_type is None:
+                ext = image_file.suffix.lower().lstrip(".")
+                mime_type = f"image/{'jpeg' if ext == 'jpg' else ext}"
+
+            with open(image_file, "rb") as f:
+                b64_data = base64.b64encode(f.read()).decode("utf-8")
+            data_url = f"data:{mime_type};base64,{b64_data}"
+
+            # 4. Call Qwen-VL-OCR via OpenAI-compatible API
+            client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=self.base_url,
+                timeout=self.request_timeout,
+            )
+
+            completion = await client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url},
+                                # Per Qwen-VL-OCR docs, these sit alongside
+                                # `image_url`, not inside it.
+                                "min_pixels": self.min_pixels,
+                                "max_pixels": self.max_pixels,
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt if prompt else self.default_prompt,
+                            },
+                        ],
+                    }
+                ],
+            )
+
+            extracted_text = (completion.choices[0].message.content or "").strip()
+
+            output_text = f"OCR Results:\nExtracted Text:\n{extracted_text}\n"
             return ToolResult(output=output_text)
-            
+
         except FileNotFoundError:
             return ToolResult(error=f"File not found: {image_path}")
-        except requests.exceptions.RequestException as e:
-            return ToolResult(error=f"Network request error: {str(e)}")
         except Exception as e:
-            return ToolResult(error=f"OCR processing error: {str(e)}")
-    
-    def _extract_text_from_result(self, result: dict) -> str:
-        """Extract plain text from API result"""
-        text_lines = []
-        
-        for region in result.get("regions", []):
-            for line in region.get("lines", []):
-                line_text = ""
-                for word in line.get("words", []):
-                    line_text += word.get("text", "") + " "
-                if line_text.strip():
-                    text_lines.append(line_text.strip())
-        
-        return "\n".join(text_lines)
+            return ToolResult(error=f"OCR processing error: {type(e).__name__}: {e}")
