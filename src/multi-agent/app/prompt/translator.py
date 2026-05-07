@@ -85,39 +85,40 @@ NEXT_STEP_PROMPT = """Based on the current state and previous memory, what's you
 
 ---
 
-📌 **IF YOUR MEMORY CONTAINS "REASONING FEEDBACK"** (i.e. this is a refinement iteration):
+📌 **IF YOUR SYSTEM CONTEXT CONTAINS A PREVIOUS SIR** (refinement iteration):
 
-1. **Read the feedback carefully**:
-   - `Preliminary answer`: the reasoning agent's current best guess — understand what it is trying to confirm
-   - `Still need`: the SPECIFIC visual detail that is missing — this is your PRIMARY objective
+Your system context already contains:
+- The previous visual description (SIR)
+- The reasoning feedback including "Still need"
 
-2. **Choose ONE tool to address "Still need"** — use AT MOST ONE tool, then immediately finalize:
-   - Text/numbers on screen → use `OCR`
-   - Structured rows/columns → use `read_table`
-   - Specific region or spatial layout → use `smart_grid_caption`
-   - Already visible in your direct observation → skip tools entirely, describe it explicitly
+Your user message contains:
+- The specific detail requested ("Still need")
+- The suggested tool to use
 
-3. **Update your SIR** by appending the requested detail. Do NOT rewrite from scratch.
+YOUR TASK:
+1. **Use the ONE suggested tool immediately** to get the requested detail
+2. **Append the result to your existing SIR** — do NOT rewrite from scratch
+3. **Call terminate_and_output_caption** right after the tool result
 
-4. **Immediately call `terminate_and_output_caption`** in the very next step after the tool result.
-
-⛔ If a tool result is already in your memory from this iteration:
-   - Do NOT call another tool
-   - Your ONLY valid action is to call `terminate_and_output_caption` with the updated SIR
-
----
-
-🔍 **IF THIS IS A FRESH ITERATION (no feedback yet)**:
-
-- Directly observe the image and describe all visible content objectively.
-- Use tools to enhance accuracy when needed (text, tables, regions).
-- Output a raw, neutral description: preserve exact text, blanks ("", "—", "___"), unknowns ("?"), typos, casing, punctuation, and line breaks as seen.
-- Do NOT infer, normalize, answer questions, or explain meaning.
-- When comprehensive, call `terminate_and_output_caption` with your complete description.
+⛔ STRICT RULES:
+- Call the suggested tool ONCE only
+- Do NOT call any other tool before or after
+- Do NOT rewrite the entire SIR from scratch
+- After tool result → immediately call terminate_and_output_caption
 
 ---
 
-Keep responses under 1024 tokens — be concise and focus on the specific detail requested in "Still need".
+🔍 **IF THIS IS A FRESH ITERATION (no system context)**:
+
+- Directly observe the image and describe all visible content objectively
+- Use tools to enhance accuracy when needed (text, tables, regions)
+- Output raw, neutral description: preserve exact text, blanks ("", "—", "___"), unknowns ("?"), typos, casing, punctuation, line breaks
+- Do NOT infer, normalize, answer questions, or explain meaning
+- When comprehensive, call terminate_and_output_caption
+
+---
+
+Keep responses under 1024 tokens.
 """
 
 FINAL_STEP_PROMPT = """🚨 **FINAL OUTPUT**
