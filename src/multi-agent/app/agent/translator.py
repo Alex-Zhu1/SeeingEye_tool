@@ -12,7 +12,7 @@ from app.tool.read_table import ReadTable
 from app.tool.terminate_and_output_caption import TerminateAndOutputCaption
 from app.tool.smart_grid_caption import SmartGridCaption
 from app.tool.think import Think
-from app.schema import ToolChoice, TOOL_CHOICE_TYPE
+from app.schema import AgentState, ToolChoice, TOOL_CHOICE_TYPE
 class TranslatorAgent(ToolCallAgent):
     """
     A specialized VLM agent that provides simple image captioning.
@@ -157,3 +157,17 @@ class TranslatorAgent(ToolCallAgent):
     #             logger.info(f"📝 final_caption_json stored ({len(self.final_caption_json)} chars)")
 
     #     return result
+    # translator agent
+    async def force_termination(self) -> None:
+        logger.warning("translator: force termination — calling terminate_and_output_caption")
+        current_sir = self.get_current_sir() or "No visual description available"
+        result = await self.available_tools.execute(
+            name="terminate_and_output_caption",
+            tool_input={
+                "global_caption": current_sir,
+                "confidence": "low",
+                "summary_of_this_turn": "1. **Initial Visual Analysis**: Forced termination. 2. **Tool Usage**: No tool used. 3. **Feedback Integration**: No feedback. 4. **Final Refinement**: Forced output."
+            }
+        )
+        self.final_caption_json = str(result)
+        self.state = AgentState.FINISHED

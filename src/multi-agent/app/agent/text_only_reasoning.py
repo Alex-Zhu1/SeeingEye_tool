@@ -11,7 +11,7 @@ from app.tool.terminate_and_answer import TerminateAndAnswer
 from app.tool.terminate_and_ask_translator import TerminateAndAskTranslator
 from app.tool.think import Think
 from app.logger import logger
-from app.schema import ToolChoice, TOOL_CHOICE_TYPE
+from app.schema import AgentState, ToolChoice, TOOL_CHOICE_TYPE
 
 class TextOnlyReasoningAgent(ToolCallAgent):
     """
@@ -52,3 +52,15 @@ class TextOnlyReasoningAgent(ToolCallAgent):
     setup_reasoning_llm = create_llm_setup_validator("reasoning_api", "TextOnlyReasoningAgent")
 
     # force_termination implementation inherited from BaseAgent
+    # reasoning agent
+    async def force_termination(self) -> None:
+        logger.warning("reasoning: force termination — calling terminate_and_ask_translator")
+        result = await self.available_tools.execute(
+            name="terminate_and_ask_translator",
+            tool_input={
+                "preliminary_answer": "unknown",
+                "confidence": "low",
+                "still_need": "smart_grid_caption: provide complete visual description of the image"
+            }
+        )
+        self.state = AgentState.FINISHED

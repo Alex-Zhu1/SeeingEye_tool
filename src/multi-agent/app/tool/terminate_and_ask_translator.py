@@ -1,16 +1,23 @@
 from app.tool.base import BaseTool
 
 
-_TERMINATE_AND_ASK_TRANSLATOR_DESCRIPTION = """Terminate current reasoning step and request more specific visual observations from the translator.
+_TERMINATE_AND_ASK_TRANSLATOR_DESCRIPTION = """Terminate current reasoning and request ONE specific visual detail from the translator.
 
-Use this tool when:
-- The current SIR (visual description) is insufficient for answering the question
-- You need more specific details about certain parts of the image
-- Important visual elements seem to be missing from the description
-- You need clarification about spatial relationships, text content, or visual elements
-- The translator's description lacks crucial information needed for reasoning
+Use when:
+- Any numerical value in the answer has NOT been verified via python_execute
+- The visual description uses vague language ("appears to be", "seems like", "possibly")
+- You cannot definitively rule out all other options
+- Confidence is below 0.95
 
-This signals that you need additional visual analysis before you can provide a final answer."""
+Required fields:
+- preliminary_answer: concrete value (e.g. "6", "16°", "B") — NOT an image description
+- confidence: high / medium / low (see strict definitions below)
+- still_need: ONE tool + ONE task, format "<tool>: <task>"
+  Tools: OCR / smart_grid_caption / read_table
+  ✅ "OCR: extract the numerical value of BC"
+  ✅ "smart_grid_caption: read exact Y-axis values"
+  ❌ "OCR and smart_grid_caption: ..." (multiple tools forbidden)
+  ❌ "more details" (too vague)"""
 
 
 class TerminateAndAskTranslator(BaseTool):
@@ -19,14 +26,49 @@ class TerminateAndAskTranslator(BaseTool):
     parameters: dict = {
         "type": "object",
         "properties": {
-            "feedback": {
+            "preliminary_answer": {
                 "type": "string",
-                "description": "Specific feedback about what additional visual information you need from the translator. Be precise about what's missing or unclear in the current description.",
+                "description": (
+                    "Your current best concrete answer, e.g. '6', '16°', 'B'. "
+                    "Must be a specific value — NOT a description of the image. "
+                    "If you cannot form any concrete answer yet, write 'unknown'."
+                ),
+            },
+            "confidence": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": (
+                    "STRICT definitions — do NOT upgrade your confidence:\n"
+                    "'high': You have a concrete answer AND have verified it via python_execute "
+                    "AND the visual description provides specific unambiguous evidence. "
+                    "Still need = minor verification only (e.g. confirm one label).\n"
+                    "'medium': You have a reasonable guess but the visual description is incomplete, "
+                    "vague, or uses language like 'appears to be' / 'seems like'. "
+                    "Calculation has NOT been verified.\n"
+                    "'low': Key visual information is clearly missing. "
+                    "You cannot form a concrete answer without more visual detail.\n\n"
+                    "DEFAULT to 'medium' if in doubt — do NOT use 'high' unless all conditions are met."
+                ),
+            },
+            "still_need": {
+                "type": "string",
+                "description": (
+                    "ONE tool + ONE specific task. Format: '<tool>: <specific task>'\n"
+                    "Tools: OCR / smart_grid_caption / read_table\n"
+                    "✅ 'OCR: extract the exact numerical value labeled on BC'\n"
+                    "✅ 'smart_grid_caption: read exact Y-axis tick values in the bar chart'\n"
+                    "✅ 'read_table: extract all numerical values from the data table'\n"
+                    "❌ multiple tools in one request\n"
+                    "❌ vague requests like 'more details' or 'confirm the answer'"
+                ),
             }
         },
-        "required": ["feedback"],
+        "required": ["preliminary_answer", "confidence", "still_need"],
     }
 
-    async def execute(self, feedback: str) -> str:
-        """Terminate reasoning step and provide feedback for translator"""
-        return f"feedback: {feedback}"
+    async def execute(self, preliminary_answer: str, confidence: str, still_need: str) -> str:
+        return (
+            f"Preliminary answer: {preliminary_answer}\n"
+            f"Confidence: {confidence}\n"
+            f"Still need: {still_need}"
+        )
